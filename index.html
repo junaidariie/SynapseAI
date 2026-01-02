@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SynapseAI RAG Chat</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg-dark: #121212;
+            --bg-sidebar: #18181b;
+            --bg-card: #27272a;
+            --bg-input: #3f3f46;
+            --accent: #8b5cf6; /* Violet */
+            --accent-hover: #7c3aed;
+            --text-main: #f4f4f5;
+            --text-muted: #a1a1aa;
+            --border: #3f3f46;
+            --user-bubble: #3f3f46;
+            --bot-bubble: #18181b; 
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            height: 100vh;
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* --- Sidebar --- */
+        aside {
+            width: 280px;
+            background-color: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            transition: width 0.3s ease, transform 0.3s ease;
+            z-index: 100;
+            flex-shrink: 0;
+            white-space: nowrap;
+            overflow: hidden;
+        }
+
+        aside.collapsed {
+            width: 0;
+            border: none;
+        }
+
+        .sidebar-header {
+            padding: 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .new-chat-btn {
+            width: 100%;
+            padding: 12px;
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: 500;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: background 0.2s;
+            margin-bottom: 15px;
+        }
+        .new-chat-btn:hover { background: var(--accent-hover); }
+
+        .sidebar-content {
+            padding: 15px;
+            overflow-y: auto;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .section-title {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            letter-spacing: 0.05em;
+            margin: 20px 0 10px 0;
+            font-weight: 600;
+        }
+
+        /* Session List */
+        .session-item {
+            padding: 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            transition: background 0.2s;
+            margin-bottom: 4px;
+        }
+        .session-item:hover { background: var(--bg-card); color: white; }
+        .session-item.active { background: var(--bg-input); color: white; border-left: 3px solid var(--accent); }
+
+        /* File Upload Area */
+        .upload-zone {
+            border: 2px dashed var(--border);
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+            cursor: pointer;
+            transition: 0.2s;
+            background: rgba(255,255,255,0.02);
+            position: relative;
+        }
+        .upload-zone:hover { border-color: var(--accent); background: rgba(139, 92, 246, 0.05); }
+        
+        /* Upload Progress Bar */
+        .progress-container {
+            width: 100%;
+            height: 4px;
+            background: var(--bg-input);
+            border-radius: 2px;
+            margin-top: 10px;
+            overflow: hidden;
+            display: none;
+        }
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent), #a78bfa);
+            width: 0%;
+            transition: width 0.2s;
+            animation: shimmer 1.5s infinite linear;
+        }
+        @keyframes shimmer {
+            0% { opacity: 0.6; }
+            50% { opacity: 1; }
+            100% { opacity: 0.6; }
+        }
+
+        .file-badge {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--bg-card);
+            padding: 8px 12px;
+            border-radius: 6px;
+            margin-top: 10px;
+            border: 1px solid var(--border);
+            font-size: 0.85rem;
+            animation: slideDown 0.3s ease;
+        }
+        @keyframes slideDown { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+
+        .remove-file { color: #ef4444; cursor: pointer; padding: 4px; }
+        .remove-file:hover { color: #f87171; }
+
+        /* About Button */
+        .about-btn {
+            margin-top: auto;
+            padding: 10px;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border-top: 1px solid var(--border);
+            padding-top: 20px;
+        }
+        .about-btn:hover { color: white; }
+
+        /* --- Main Chat --- */
+        main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            min-width: 0;
+        }
+
+        header {
+            padding: 15px 20px;
+            background: var(--bg-dark);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            height: 60px;
+        }
+
+        .toggle-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-main);
+            cursor: pointer;
+            padding: 8px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .toggle-btn:hover { background: var(--bg-input); }
+
+        /* Chat Area */
+        .chat-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            scroll-behavior: smooth;
+        }
+
+        .message {
+            max-width: 85%;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            animation: fadeIn 0.3s ease;
+        }
+        .message.user { align-self: flex-end; align-items: flex-end; }
+        .message.bot { align-self: flex-start; align-items: flex-start; }
+
+        .bubble-container {
+            display: flex;
+            align-items: flex-end;
+            gap: 8px;
+        }
+
+        .bubble {
+            padding: 12px 16px;
+            border-radius: 12px;
+            font-size: 0.95rem;
+            line-height: 1.6;
+            word-wrap: break-word;
+            position: relative;
+        }
+        .message.user .bubble { background: var(--user-bubble); border-bottom-right-radius: 2px; }
+        .message.bot .bubble { background: var(--bot-bubble); border: 1px solid var(--border); border-bottom-left-radius: 2px; }
+
+        /* --- TTS BUTTON STYLES --- */
+        .tts-icon-btn {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 6px;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            transition: 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        .tts-icon-btn:hover { background: rgba(255,255,255,0.05); color: var(--accent); }
+        
+        /* Animation for Loading */
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+        
+        .tts-icon-btn.loading { cursor: wait; pointer-events: auto; }
+        .tts-icon-btn.loading svg { animation: spin 1s linear infinite; color: var(--accent); }
+        
+        /* State for Playing */
+        .tts-icon-btn.playing {
+            color: var(--accent);
+            background: rgba(139, 92, 246, 0.1);
+        }
+
+        /* Tool Usage Badge */
+        .tool-indicator {
+            font-size: 0.75rem;
+            color: var(--accent);
+            background: rgba(139, 92, 246, 0.1);
+            border: 1px solid rgba(139, 92, 246, 0.2);
+            padding: 4px 10px;
+            border-radius: 12px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 5px;
+            width: fit-content;
+        }
+        
+        /* Input Area */
+        .input-area {
+            padding: 20px;
+            background: var(--bg-dark);
+            border-top: 1px solid var(--border);
+            display: flex;
+            gap: 10px;
+            align-items: flex-end;
+        }
+        textarea {
+            flex: 1;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: white;
+            padding: 12px;
+            resize: none;
+            height: 50px;
+            max-height: 120px;
+            font-family: inherit;
+        }
+        textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
+
+        .icon-btn {
+            width: 45px; height: 45px;
+            border-radius: 50%;
+            border: none;
+            background: var(--bg-input);
+            color: white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: 0.2s;
+            flex-shrink: 0;
+        }
+        .icon-btn:hover { background: var(--accent); }
+        .icon-btn.recording { background: #ef4444; animation: pulse 1.5s infinite; }
+
+        /* About Modal */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.7);
+            z-index: 200;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            backdrop-filter: blur(3px);
+        }
+        .modal {
+            background: var(--bg-card);
+            padding: 30px;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 500px;
+            border: 1px solid var(--border);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+            position: relative;
+            animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        @keyframes popIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        .modal h2 { margin-bottom: 15px; color: var(--accent); }
+        .modal p { color: var(--text-muted); line-height: 1.6; margin-bottom: 20px; }
+        .modal-close {
+            position: absolute; top: 15px; right: 15px;
+            background: none; border: none; color: var(--text-muted); cursor: pointer;
+        }
+
+        /* Markdown Styling */
+        .bubble pre { background: #111; padding: 10px; border-radius: 6px; overflow-x: auto; margin: 10px 0; }
+        .bubble code { font-family: 'Courier New', monospace; font-size: 0.9em; }
+
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.1); } 100% { transform: scale(1); } }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Mobile Responsive */
+        @media (max-width: 768px) {
+            aside {
+                position: absolute;
+                height: 100%;
+                left: 0;
+                transform: translateX(-100%);
+                width: 80%;
+                box-shadow: 10px 0 20px rgba(0,0,0,0.5);
+                border-right: none;
+            }
+            aside.open { transform: translateX(0); width: 85%; }
+            aside.collapsed { width: 85%; transform: translateX(-100%); }
+            
+            .overlay {
+                position: fixed; top:0; left:0; width:100%; height:100%;
+                background: rgba(0,0,0,0.5); z-index: 90;
+                display: none;
+            }
+            .overlay.active { display: block; }
+        }
+        
+        svg { width: 20px; height: 20px; fill: currentColor; }
+    </style>
+</head>
+<body>
+
+    <div class="overlay" id="mobileOverlay" onclick="toggleSidebar()"></div>
+
+    <div class="modal-overlay" id="aboutModal">
+        <div class="modal">
+            <button class="modal-close" onclick="closeAbout()">
+                <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+            </button>
+            <h2>About SynapseAI</h2>
+            <p>
+                SynapseAI is an advanced RAG (Retrieval-Augmented Generation) chatbot designed to help you interact with your documents.
+                <br><br>
+                <strong>Features:</strong><br>
+                • 📄 Document Upload & Analysis<br>
+                • 🎙️ Speech-to-Text Support<br>
+                • 🔊 Text-to-Speech Responses<br>
+                • 💾 Chat History & Session Management
+            </p>
+            <button class="new-chat-btn" onclick="closeAbout()">Got it!</button>
+        </div>
+    </div>
+
+    <aside id="sidebar">
+        <div class="sidebar-header">
+            <h3>SynapseAI</h3>
+            <button class="toggle-btn" style="display: none;" id="mobileCloseBtn" onclick="toggleSidebar()">
+                <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+            </button>
+        </div>
+        
+        <div class="sidebar-content">
+            <button class="new-chat-btn" onclick="startNewChat()">
+                <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+                New Chat
+            </button>
+
+            <div class="section-title">Knowledge Base</div>
+            <div class="upload-zone" onclick="document.getElementById('fileInput').click()">
+                <svg style="color:var(--text-muted)" viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zM6 20V4h7v5h5v11H6z"/></svg>
+                <div style="font-size:0.8rem; margin-top:5px; color:var(--text-muted)" id="uploadText">Click to upload doc</div>
+                
+                <div class="progress-container" id="progressBarContainer">
+                    <div class="progress-bar" id="progressBar"></div>
+                </div>
+            </div>
+            <input type="file" id="fileInput" accept=".txt,.pdf,.md,.csv,.docx" style="display:none">
+            
+            <div id="fileDisplayArea"></div>
+
+            <div class="section-title">History</div>
+            <div id="historyList"></div>
+
+            <div class="about-btn" onclick="openAbout()">
+                <svg viewBox="0 0 24 24"><path d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg>
+                About App
+            </div>
+        </div>
+    </aside>
+
+    <main>
+        <header>
+            <button class="toggle-btn" onclick="toggleSidebar()">
+                <svg viewBox="0 0 24 24"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
+            </button>
+            <h4 id="chatTitle">New Chat</h4>
+        </header>
+
+        <div class="chat-container" id="chatContainer"></div>
+
+        <div class="input-area">
+            <button class="icon-btn" id="micBtn" onclick="toggleRecording()">
+                <svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.66 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 11c0 3.01-2.69 5.42-6 5.42S5 14.01 5 11h2c0 2.21 1.79 4 4 4s4-1.79 4-4h2zM11 18h2v3h-2z"/></svg>
+            </button>
+            <textarea id="msgInput" placeholder="Ask something..." onkeydown="if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendMessage(); }"></textarea>
+            <button class="icon-btn" onclick="sendMessage()" style="background: var(--accent);">
+                <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+            </button>
+        </div>
+    </main>
+
+    <script>
+        // --- CONFIG ---
+        const API_BASE_URL = "https://junaid17-synapseai.hf.space";
+        
+        // --- STATE ---
+        let currentSessionId = generateUUID();
+        let sessions = JSON.parse(localStorage.getItem('rag_sessions')) || {};
+        let uploadedFile = null;
+
+        // --- DOM ELEMENTS ---
+        const chatContainer = document.getElementById('chatContainer');
+        const msgInput = document.getElementById('msgInput');
+        const sidebar = document.getElementById('sidebar');
+        const mobileOverlay = document.getElementById('mobileOverlay');
+        const historyList = document.getElementById('historyList');
+        const fileDisplayArea = document.getElementById('fileDisplayArea');
+        const progressBarContainer = document.getElementById('progressBarContainer');
+        const progressBar = document.getElementById('progressBar');
+        const uploadText = document.getElementById('uploadText');
+
+        // --- INIT ---
+        window.onload = () => {
+            renderHistory();
+            startNewChat();
+            if(window.innerWidth < 768) {
+                document.getElementById('mobileCloseBtn').style.display = 'block';
+            }
+        };
+
+        // --- SIDEBAR LOGIC ---
+        function toggleSidebar() {
+            if (window.innerWidth < 768) {
+                // Mobile: Slide logic
+                sidebar.classList.toggle('open');
+                mobileOverlay.classList.toggle('active');
+            } else {
+                // Desktop: Width collapse logic
+                sidebar.classList.toggle('collapsed');
+            }
+        }
+
+        // --- ABOUT MODAL ---
+        function openAbout() { document.getElementById('aboutModal').style.display = 'flex'; }
+        function closeAbout() { document.getElementById('aboutModal').style.display = 'none'; }
+
+        // --- CHAT HISTORY & SESSION ---
+        function generateUUID() {
+            return 'xxxx-xxxx-4xxx-yxxx'.replace(/[xy]/g, c => {
+                var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+
+        function startNewChat() {
+            currentSessionId = generateUUID();
+            chatContainer.innerHTML = '';
+            document.getElementById('chatTitle').innerText = "New Chat";
+            appendSystemMessage("Hello! I'm ready to help. Upload a document or just start chatting.");
+            
+            if(window.innerWidth < 768) {
+                sidebar.classList.remove('open');
+                mobileOverlay.classList.remove('active');
+            }
+            renderHistory();
+        }
+
+        function loadSession(id) {
+            if (!sessions[id]) return;
+            currentSessionId = id;
+            chatContainer.innerHTML = '';
+            
+            const sessionData = sessions[id];
+            document.getElementById('chatTitle').innerText = sessionData.title || "Chat";
+
+            sessionData.messages.forEach(msg => {
+                appendMessageToUI(msg.role, msg.content, false, msg.toolUsed);
+            });
+
+            if(window.innerWidth < 768) toggleSidebar();
+            renderHistory();
+        }
+
+        function saveMessage(role, content, toolUsed = null) {
+            if (!sessions[currentSessionId]) {
+                sessions[currentSessionId] = {
+                    title: content.substring(0, 30) + (content.length > 30 ? '...' : ''),
+                    timestamp: Date.now(),
+                    messages: []
+                };
+            }
+            
+            sessions[currentSessionId].messages.push({ role, content, toolUsed });
+            sessions[currentSessionId].timestamp = Date.now();
+            localStorage.setItem('rag_sessions', JSON.stringify(sessions));
+            renderHistory();
+        }
+
+        function renderHistory() {
+            historyList.innerHTML = '';
+            const sortedIds = Object.keys(sessions).sort((a,b) => sessions[b].timestamp - sessions[a].timestamp);
+
+            sortedIds.forEach(id => {
+                const session = sessions[id];
+                const div = document.createElement('div');
+                div.className = `session-item ${id === currentSessionId ? 'active' : ''}`;
+                div.innerText = session.title || "Untitled Chat";
+                div.onclick = () => loadSession(id);
+                historyList.appendChild(div);
+            });
+        }
+
+        // --- MESSAGING UI ---
+        function appendSystemMessage(text) {
+            const div = document.createElement('div');
+            div.className = 'message bot';
+            div.innerHTML = `<div class="bubble">${text}</div>`;
+            chatContainer.appendChild(div);
+        }
+
+        function appendMessageToUI(role, htmlContent, isStreaming = false, toolUsed = null) {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `message ${role}`;
+            
+            const bubbleContainer = document.createElement('div');
+            bubbleContainer.className = 'bubble-container';
+
+            const bubble = document.createElement('div');
+            bubble.className = 'bubble';
+            
+            if (role === 'bot') {
+                if (isStreaming) {
+                    bubble.innerHTML = htmlContent; 
+                } else {
+                    bubble.innerHTML = marked.parse(htmlContent);
+                }
+            } else {
+                bubble.innerText = htmlContent;
+            }
+
+            bubbleContainer.appendChild(bubble);
+
+            // TTS Icon Button
+            if (role === 'bot') {
+                const ttsBtn = document.createElement('button');
+                ttsBtn.className = 'tts-icon-btn';
+                ttsBtn.innerHTML = getSpeakerIcon();
+                ttsBtn.title = "Read Aloud";
+                
+                // --- FIX: Read text from the BUBBLE directly ---
+                ttsBtn.onclick = function(e) { 
+                    e.stopPropagation(); 
+                    
+                    // We grab 'bubble.innerText' so it gets the LATEST text (not the initial cursor)
+                    let textToRead = bubble.innerText.trim();
+                    
+                    // Safety check: Don't read if it's just the cursor or empty
+                    if(!textToRead || textToRead === "|") return;
+                    
+                    playTTS(textToRead, this); 
+                };
+                
+                bubbleContainer.appendChild(ttsBtn);
+            }
+
+            msgDiv.appendChild(bubbleContainer);
+
+            if (toolUsed) {
+                const toolBadge = document.createElement('div');
+                toolBadge.className = 'tool-indicator';
+                toolBadge.innerHTML = `🛠️ Used Tool: ${toolUsed}`;
+                msgDiv.appendChild(toolBadge);
+            }
+
+            chatContainer.appendChild(msgDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+            return bubble;
+        }
+
+        async function sendMessage() {
+            const text = msgInput.value.trim();
+            if (!text) return;
+
+            appendMessageToUI('user', text);
+            saveMessage('user', text);
+            msgInput.value = "";
+            msgInput.style.height = '50px';
+
+            const botBubble = appendMessageToUI('bot', '<span class="cursor">|</span>', true);
+            let fullContent = "";
+            let detectedTool = null;
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/chat?message=${encodeURIComponent(text)}&session_id=${currentSessionId}`, {
+                    method: "POST",
+                });
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder("utf-8");
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const chunk = decoder.decode(value, { stream: true });
+                    const lines = chunk.split("\n\n");
+
+                    for (const line of lines) {
+                        if (line.startsWith("data: ")) {
+                            let cleanData = line.replace("data: ", "").replace(/\\n/g, "\n");
+                            
+                            // Tool Detection
+                            if (cleanData.includes("TOOL_USED:")) {
+                                let parts = cleanData.split("TOOL_USED:");
+                                detectedTool = parts[1].trim();
+                                cleanData = parts[0]; 
+                            }
+
+                            fullContent += cleanData;
+                            // Update the bubble HTML live
+                            botBubble.innerHTML = marked.parse(fullContent);
+                            chatContainer.scrollTop = chatContainer.scrollHeight;
+                        }
+                    }
+                }
+
+                saveMessage('bot', fullContent, detectedTool);
+                
+                if (detectedTool) {
+                    const toolBadge = document.createElement('div');
+                    toolBadge.className = 'tool-indicator';
+                    toolBadge.innerHTML = `🛠️ Used Tool: ${detectedTool}`;
+                    botBubble.closest('.message').appendChild(toolBadge);
+                }
+
+            } catch (error) {
+                botBubble.innerText = "Error: Could not reach server.";
+                console.error(error);
+            }
+        }
+
+        // --- FILE UPLOAD ANIMATION & LOGIC ---
+        const fileInput = document.getElementById('fileInput');
+
+        fileInput.addEventListener('change', async () => {
+            if (fileInput.files.length > 0) {
+                const file = fileInput.files[0];
+                
+                // Show Progress
+                progressBarContainer.style.display = 'block';
+                uploadText.innerText = `Uploading ${file.name}...`;
+                
+                // Simulate progress for UX
+                let progress = 0;
+                const interval = setInterval(() => {
+                    progress += 10;
+                    if(progress > 90) progress = 90;
+                    progressBar.style.width = progress + "%";
+                }, 200);
+
+                const formData = new FormData();
+                formData.append("file", file);
+
+                try {
+                    const res = await fetch(`${API_BASE_URL}/upload`, { method: "POST", body: formData });
+                    
+                    clearInterval(interval);
+                    progressBar.style.width = "100%";
+                    
+                    if (res.ok) {
+                        setTimeout(() => {
+                            progressBarContainer.style.display = 'none';
+                            progressBar.style.width = "0%";
+                            uploadText.innerText = "Click to upload doc";
+                            renderFileBadge(file.name);
+                            uploadedFile = file.name;
+                            appendSystemMessage(`📄 Document "${file.name}" uploaded successfully.`);
+                        }, 500);
+                    } else {
+                        throw new Error("Upload failed");
+                    }
+                } catch (e) {
+                    clearInterval(interval);
+                    progressBarContainer.style.display = 'none';
+                    uploadText.innerText = "Upload failed. Try again.";
+                    console.error(e);
+                    alert("Error uploading file");
+                }
+            }
+        });
+
+        function renderFileBadge(filename) {
+            fileDisplayArea.innerHTML = '';
+            const badge = document.createElement('div');
+            badge.className = 'file-badge';
+            badge.innerHTML = `
+                <div style="display:flex; align-items:center; gap:8px; overflow:hidden;">
+                    <svg viewBox="0 0 24 24" style="color:var(--accent)"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6z"/></svg>
+                    <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${filename}</span>
+                </div>
+                <div class="remove-file" onclick="removeFile()" title="Remove File">
+                    <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+                </div>
+            `;
+            fileDisplayArea.appendChild(badge);
+        }
+
+        function removeFile() {
+            fileDisplayArea.innerHTML = '';
+            fileInput.value = '';
+            uploadedFile = null;
+            appendSystemMessage("🗑️ Document removed from context.");
+        }
+
+        // --- TTS & STT (UPDATED & FIXED) ---
+        
+        // Icon Helpers
+        function getSpeakerIcon() {
+            return `<svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>`;
+        }
+        function getLoaderIcon() {
+            return `<svg viewBox="0 0 24 24"><path d="M12 4V2C6.48 2 2 6.48 2 12h2c0-4.41 3.59-8 8-8zm0 14c4.41 0 8-3.59 8-8h-2c0 3.31-2.69 6-6 6v2zm-4-6c0-2.21 1.79-4 4-4v-2c-3.31 0-6 2.69-6 6h2zm11-1.17l-1.41 1.41C17.9 9.91 18 10.95 18 12c0 3.31-2.69 6-6 6v2c4.41 0 8-3.59 8-8 0-1.66-.45-3.21-1.23-4.58z"/></svg>`;
+        }
+        function getStopIcon() {
+            return `<svg viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg>`;
+        }
+
+        let currentAudio = null;
+        let activeTTSBtn = null;
+        let ttsController = null; // Controller to abort fetch
+
+        async function playTTS(text, btn) {
+            // Check if we are clicking the SAME button to stop it
+            if (activeTTSBtn === btn) {
+                stopTTS(); 
+                return;
+            }
+
+            // Stop any previous audio or pending fetch
+            stopTTS();
+
+            // 1. Set Loading State
+            activeTTSBtn = btn;
+            btn.classList.add('loading');
+            btn.innerHTML = getLoaderIcon();
+            
+            // Create AbortController to cancel fetch if user clicks stop
+            ttsController = new AbortController();
+
+            try {
+                const res = await fetch(`${API_BASE_URL}/tts`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ text: text }),
+                    signal: ttsController.signal
+                });
+
+                if(res.ok) {
+                    const blob = await res.blob();
+                    const audioUrl = URL.createObjectURL(blob);
+                    
+                    // 2. Play Audio
+                    currentAudio = new Audio(audioUrl);
+                    currentAudio.onended = () => stopTTS(); // Reset when done
+                    
+                    await currentAudio.play();
+
+                    // 3. Update Icon to Stop (Square)
+                    btn.classList.remove('loading');
+                    btn.classList.add('playing');
+                    btn.innerHTML = getStopIcon();
+                } else {
+                    throw new Error("Server responded with error: " + res.status);
+                }
+            } catch(e) {
+                if (e.name === 'AbortError') {
+                    console.log("TTS generation aborted by user.");
+                } else {
+                    console.error("TTS Error:", e);
+                    alert("Could not generate audio. (Check console for details)");
+                }
+                stopTTS();
+            }
+        }
+
+        function stopTTS() {
+            // Abort fetch if pending
+            if (ttsController) {
+                ttsController.abort();
+                ttsController = null;
+            }
+            // Stop audio if playing
+            if (currentAudio) {
+                currentAudio.pause();
+                currentAudio.currentTime = 0;
+                currentAudio = null;
+            }
+            // Reset Button UI
+            if (activeTTSBtn) {
+                activeTTSBtn.classList.remove('loading', 'playing');
+                activeTTSBtn.innerHTML = getSpeakerIcon();
+                activeTTSBtn = null;
+            }
+        }
+
+        async function toggleRecording() {
+            if (!navigator.mediaDevices) return alert("Microphone not supported");
+            
+            const btn = document.getElementById('micBtn');
+            if (btn.classList.contains('recording')) return;
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                const mediaRecorder = new MediaRecorder(stream);
+                const audioChunks = [];
+                
+                mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+                mediaRecorder.onstop = async () => {
+                    const blob = new Blob(audioChunks, { type: 'audio/webm' });
+                    const formData = new FormData();
+                    formData.append("file", blob, "audio.webm");
+                    
+                    document.getElementById('msgInput').placeholder = "Listening...";
+                    const res = await fetch(`${API_BASE_URL}/stt`, { method: "POST", body: formData });
+                    const data = await res.json();
+                    
+                    let textResult = data.text || (typeof data === 'string' ? data : JSON.stringify(data));
+                    
+                    document.getElementById('msgInput').value += textResult;
+                    document.getElementById('msgInput').placeholder = "Ask something...";
+                    btn.classList.remove('recording');
+                };
+
+                mediaRecorder.start();
+                btn.classList.add('recording');
+                setTimeout(() => mediaRecorder.stop(), 4000); 
+            } catch(e) { alert("Mic Error: " + e.message); }
+        }
+
+        msgInput.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = (this.scrollHeight) + 'px';
+        });
+    </script>
+</body>
+</html>
